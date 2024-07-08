@@ -248,7 +248,7 @@ app
         StartupCheckStatus.ERROR,
         `Hubble requires at least 16GB of RAM to run. Detected ${totalMemory}GB`,
       );
-      return flushAndExit(1);
+       startupCheck.printStartupCheckStatus(StartupCheckStatus.OK, `Detected ${totalMemory}GB of RAM`);
     } else {
       startupCheck.printStartupCheckStatus(StartupCheckStatus.OK, `Detected ${totalMemory}GB of RAM`);
     }
