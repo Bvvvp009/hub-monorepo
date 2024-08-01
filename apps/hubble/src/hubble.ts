@@ -22,7 +22,7 @@ import {
   validations,
 } from "@farcaster/hub-nodejs";
 import { ClientOptions as StatsDClientOptions } from "@figma/hot-shots";
-import { PeerId } from "@libp2p/interface-peer-id";
+import { Ed25519PeerId, PeerId, RSAPeerId, Secp256k1PeerId } from "@libp2p/interface";
 import { peerIdFromBytes, peerIdFromString } from "@libp2p/peer-id";
 import { publicAddressesFirst } from "@libp2p/utils/address-sort";
 import { unmarshalPrivateKey, unmarshalPublicKey } from "@libp2p/crypto/keys";
@@ -69,7 +69,7 @@ import StoreEventHandler from "./storage/stores/storeEventHandler.js";
 import { FNameRegistryClient, FNameRegistryEventsProvider } from "./eth/fnameRegistryEventsProvider.js";
 import { L2EventsProvider, OptimismConstants } from "./eth/l2EventsProvider.js";
 import { prettyPrintTable } from "./profile/profile.js";
-import { createPublicClient, fallback, http } from "viem";
+import { createPublicClient, fallback, http, type PublicClient } from "viem";
 import { mainnet, optimism } from "viem/chains";
 import { AddrInfo } from "@chainsafe/libp2p-gossipsub/types";
 import { CheckIncomingPortsJobScheduler } from "./storage/jobs/checkIncomingPortsJob.js";
@@ -96,6 +96,7 @@ import { MerkleTrie } from "./network/sync/merkleTrie.js";
 import { DEFAULT_CATCHUP_SYNC_SNAPSHOT_MESSAGE_LIMIT } from "./defaultConfig.js";
 import { diagnosticReporter } from "./utils/diagnosticReport.js";
 import { startupCheck, StartupCheckStatus } from "./utils/startupCheck.js";
+import { AddressInfo } from "node:net";
 
 export type HubSubmitSource = "gossip" | "rpc" | "eth-provider" | "l2-provider" | "sync" | "fname-registry";
 
@@ -108,7 +109,7 @@ export const SNAPSHOT_S3_UPLOAD_BUCKET = "farcaster-snapshots";
 export const SNAPSHOT_S3_DOWNLOAD_BUCKET = "download.farcaster.xyz";
 export const S3_REGION = "auto";
 
-export const FARCASTER_VERSION = "2024.6.12";
+export const FARCASTER_VERSION = "2024.7.24";
 export const FARCASTER_VERSIONS_SCHEDULE: VersionSchedule[] = [
   { version: "2023.3.1", expiresAt: 1682553600000 }, // expires at 4/27/23 00:00 UTC
   { version: "2023.4.19", expiresAt: 1686700800000 }, // expires at 6/14/23 00:00 UTC
@@ -122,6 +123,7 @@ export const FARCASTER_VERSIONS_SCHEDULE: VersionSchedule[] = [
   { version: "2024.3.20", expiresAt: 1715731200000 }, // expires at 5/15/24 00:00 UTC
   { version: "2024.5.1", expiresAt: 1719360000000 }, // expires at 6/26/24 00:00 UTC
   { version: "2024.6.12", expiresAt: 1722988800000 }, // expires at 8/7/24 00:00 UTC
+  { version: "2024.7.24", expiresAt: 1726617600000 }, // expires at 9/18/24 00:00 UTC
 ];
 
 const MAX_CONTACT_INFO_AGE_MS = 1000 * 60 * 60; // 60 minutes
@@ -453,7 +455,7 @@ export class Hub implements HubInterface {
       options.network,
       eventHandler,
       mainnetClient,
-      opClient,
+      opClient as PublicClient,
       this.fNameRegistryEventsProvider,
     );
 
@@ -771,7 +773,9 @@ export class Hub implements HubInterface {
 
     const bootstrapAddrs = this.options.bootstrapAddrs ?? [];
 
-    const peerId = this.options.peerId ? exportToProtobuf(this.options.peerId) : undefined;
+    const peerId = this.options.peerId
+      ? exportToProtobuf(this.options.peerId as RSAPeerId | Ed25519PeerId | Secp256k1PeerId)
+      : undefined;
 
     // Start the Gossip node
     await this.gossipNode.start(bootstrapAddrs, {
@@ -1114,7 +1118,7 @@ export class Hub implements HubInterface {
     const family = nodeMultiAddr?.nodeAddress().family;
     const announceIp = this.options.announceIp ?? nodeMultiAddr?.nodeAddress().address;
     const gossipPort = nodeMultiAddr?.nodeAddress().port;
-    const rpcPort = this.rpcServer.address?.map((addr) => addr.port).unwrapOr(0);
+    const rpcPort = this.rpcServer.address?.map((addr: AddressInfo) => addr.port).unwrapOr(0);
 
     const gossipAddressContactInfo = GossipAddressInfo.create({
       address: announceIp,
@@ -1569,7 +1573,7 @@ export class Hub implements HubInterface {
       try {
         const sslClientResult = getSSLHubRpcClient(address, options);
 
-        sslClientResult.$.waitForReady(Date.now() + 2000, (err) => {
+        sslClientResult.$.waitForReady(Date.now() + 2000, (err: Error | undefined) => {
           if (!err) {
             resolve(sslClientResult);
           } else {
@@ -1696,7 +1700,7 @@ export class Hub implements HubInterface {
       const peerAddresses = peerInfo.multiaddrs;
 
       // sorts addresses by Public IPs first
-      const addr = peerAddresses.sort((a, b) =>
+      const addr = peerAddresses.sort((a: Multiaddr, b: Multiaddr) =>
         publicAddressesFirst({ multiaddr: a, isCertified: false }, { multiaddr: b, isCertified: false }),
       )[0];
       if (addr === undefined) {

@@ -320,13 +320,13 @@ describe("subscribe", () => {
 describe("sharded event stream", () => {
   test("emits events only for fids that match", async () => {
     // biome-ignore lint/suspicious/noExplicitAny: legacy code, avoid using ignore for new code
-    const evenEvents: [HubEventType, any][] = [];
+    const shard0Events: [HubEventType, any][] = [];
     // biome-ignore lint/suspicious/noExplicitAny: legacy code, avoid using ignore for new code
-    const oddEvents: [HubEventType, any][] = [];
-    await setupSubscription(evenEvents, { totalShards: 2, shardIndex: 0 });
-    await setupSubscription(oddEvents, { totalShards: 2, shardIndex: 1 });
+    const shard1Events: [HubEventType, any][] = [];
+    await setupSubscription(shard0Events, { totalShards: 2, shardIndex: 0 });
+    await setupSubscription(shard1Events, { totalShards: 2, shardIndex: 1 });
 
-    // Merge even events
+    // Merge events for shard 0
     await setupMessages(202, Factories.Fname.build());
     await engine.mergeOnChainEvent(custodyEvent);
     await engine.mergeOnChainEvent(signerEvent);
@@ -334,8 +334,8 @@ describe("sharded event stream", () => {
     await engine.mergeMessage(castAdd);
     await engine.mergeUserNameProof(usernameProof);
 
-    // Merge odd  events
-    await setupMessages(303, Factories.Fname.build());
+    // Merge events for shard 1
+    await setupMessages(301, Factories.Fname.build());
     await engine.mergeOnChainEvent(custodyEvent);
     await engine.mergeOnChainEvent(signerEvent);
     await engine.mergeOnChainEvent(storageEvent);
@@ -343,33 +343,41 @@ describe("sharded event stream", () => {
     await engine.mergeUserNameProof(usernameProof);
     await sleep(100); // Wait for server to send events over stream
 
-    expect(evenEvents).toHaveLength(5);
-    expect(oddEvents).toHaveLength(5);
+    expect(shard0Events.length).toEqual(9); // Onchain/username proofs always assigned to shard 0 for linear ordering
+    expect(shard1Events.length).toEqual(1);
 
-    evenEvents.map(([, event]) => {
-      expect(event.fid || event.data.fid).toBe(202);
+    function orderedEvent(eventType: number) {
+      return eventType === HubEventType.MERGE_ON_CHAIN_EVENT || eventType === HubEventType.MERGE_USERNAME_PROOF;
+    }
+
+    shard0Events.map(([eventType, event]) => {
+      const fid = event.fid || event.data.fid;
+      expect(fid === 202 || orderedEvent(eventType)).toEqual(true);
     });
-    oddEvents.map(([, event]) => {
-      expect(event.fid || event.data.fid).toBe(303);
+    shard1Events.map(([eventType, event]) => {
+      const fid = event.fid || event.data.fid;
+      expect(fid === 301 && !orderedEvent(eventType)).toEqual(true);
     });
 
     // Should also work when requesting events from the past
     // biome-ignore lint/suspicious/noExplicitAny: legacy code, avoid using ignore for new code
-    const evenHistoricalEvents: [HubEventType, any][] = [];
+    const shard0HistoricalEvents: [HubEventType, any][] = [];
     // biome-ignore lint/suspicious/noExplicitAny: legacy code, avoid using ignore for new code
-    const oddHistoricalEvents: [HubEventType, any][] = [];
+    const shard1HistoricalEvents: [HubEventType, any][] = [];
 
-    await setupSubscription(evenHistoricalEvents, { totalShards: 2, shardIndex: 0, fromId: 0 });
-    await setupSubscription(oddHistoricalEvents, { totalShards: 2, shardIndex: 1, fromId: 0 });
+    await setupSubscription(shard0HistoricalEvents, { totalShards: 2, shardIndex: 0, fromId: 0 });
+    await setupSubscription(shard1HistoricalEvents, { totalShards: 2, shardIndex: 1, fromId: 0 });
     await sleep(100);
 
-    expect(evenHistoricalEvents).toHaveLength(5);
-    expect(oddHistoricalEvents).toHaveLength(5);
-    evenHistoricalEvents.map(([, event]) => {
-      expect(event.fid || event.data.fid).toBe(202);
+    expect(shard0HistoricalEvents).toHaveLength(9);
+    expect(shard1HistoricalEvents).toHaveLength(1);
+    shard0HistoricalEvents.map(([eventType, event]) => {
+      const fid = event.fid || event.data.fid;
+      expect(fid === 202 || orderedEvent(eventType)).toEqual(true);
     });
-    oddHistoricalEvents.map(([, event]) => {
-      expect(event.fid || event.data.fid).toBe(303);
+    shard1HistoricalEvents.map(([eventType, event]) => {
+      const fid = event.fid || event.data.fid;
+      expect(fid === 301 && !orderedEvent(eventType)).toEqual(true);
     });
   });
 });
