@@ -15,6 +15,6 @@ echo "Publishing $HUBBLE_VERSION"
 depot build -f Dockerfile.hubble \
   --platform "linux/amd64,linux/arm64" \
   --push \
-  -t farcasterxyz/hubble:${HUBBLE_VERSION} \
-  -t farcasterxyz/hubble:latest \
+  -t bvvvp009/hubble:${HUBBLE_VERSION} \
+  -t bvvvp009/hubble:latest \
   .
